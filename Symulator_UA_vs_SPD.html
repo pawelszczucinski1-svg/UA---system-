@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Symulator UA System vs SPD</title>
+<style>
+:root{--bg:#121214;--panel:#1a1a1e;--txt:#e2e8f0;--red:#ef4444;--grn:#22c55e;--brd:#2d2d34}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',sans-serif;margin:0;padding:16px;display:flex;flex-direction:column;align-items:center}
+h1{font-size:1.3rem;text-transform:uppercase;letter-spacing:1px;text-align:center;color:#fff;border-bottom:2px solid var(--brd);padding-bottom:8px;width:100%;max-width:1060px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,450px),1fr));gap:14px;width:100%;max-width:1060px}
+.panel{background:var(--panel);border:1px solid var(--brd);border-radius:12px;padding:12px;display:flex;flex-direction:column;align-items:center;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+.ph{font-size:.95rem;font-weight:700;text-transform:uppercase;text-align:center;margin-bottom:10px}
+.ph.red{color:var(--red)}.ph.grn{color:var(--grn)}.ph.blue{color:#3b82f6}
+canvas{background:#0b0b0d;border-radius:8px;border:1px solid #23232a;width:100%;max-width:460px;aspect-ratio:1;touch-action:none}
+canvas.wide{max-width:940px;aspect-ratio:3/1}
+canvas.chart{max-width:940px;aspect-ratio:4/1}
+.ctrl{grid-column:1/-1;background:var(--panel);border:1px solid var(--brd);border-radius:8px;padding:14px;display:flex;justify-content:space-around;align-items:center;flex-wrap:wrap;gap:12px}
+input[type=range]{height:38px;cursor:pointer;accent-color:#22c55e;min-width:110px}
+.cg{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+button{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:10px 18px;border-radius:6px;cursor:pointer;font-weight:600;font-size:.9rem;min-height:44px}
+button:hover{background:#3f3f46}
+button:focus-visible,input:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
+.leg{margin-top:7px;font-size:.78rem;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:3px;color:#a1a1aa}
+.li{display:flex;align-items:center;gap:4px}
+.cb{width:10px;height:10px;border-radius:2px;flex:none}
+.leg.wide{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));grid-column:1/-1;margin:0}
+#csvBtn{background:#1e3a5f;border-color:#3b82f6;color:#93c5fd}
+#csvBtn:hover{background:#1d4ed8}
+#btnPres{background:#3b0764;border-color:#a855f7;color:#d8b4fe}
+#btnPres:hover{background:#6b21a8}
+.pres-overlay{display:none;position:fixed;inset:0;background:#0f0f11;z-index:999;flex-direction:column;align-items:center;justify-content:flex-start;padding:10px}
+.pres-overlay.active{display:flex}
+.pres-overlay canvas{width:100%!important;max-width:none!important;max-height:calc(100vh - 110px);aspect-ratio:auto;object-fit:contain}
+.pres-nav{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap;justify-content:center}
+.pres-nav button{padding:8px 16px;font-size:.95rem}
+.pres-title{color:#a1a1aa;font-size:.85rem;text-align:center;margin-top:6px}
+</style>
+</head>
+<body>
+<h1>Analiza Kinematyczno-Mięśniowa Cyklu Pedałowania</h1>
+<div id="presOverlay" class="pres-overlay">
+  <div class="pres-nav">
+    <button onclick="presShow(0)">1 · SPD</button>
+    <button onclick="presShow(1)">2 · UA</button>
+    <button onclick="presShow(2)">3 · Bilans O₂</button>
+    <button onclick="presShow(3)">4 · Mechanizm</button>
+    <button onclick="presShow(4)">5 · Moment siły</button>
+    <button onclick="closePres()" style="background:#27272a;border-color:#ef4444;color:#fca5a5">✕ Zamknij</button>
+  </div>
+  <canvas id="cPres" width="1200" height="700"></canvas>
+  <div class="pres-title" id="presTitle"></div>
+</div>
+<div class="grid">
+  <div class="panel">
+    <div class="ph red">Panel 1 · Geometria Szosowa + SPD — MODEL SYMULACYJNY</div>
+    <canvas id="cSPD" width="500" height="500"></canvas>
+    <div class="leg">
+      <div class="li"><div class="cb" style="background:#ef4444"></div>Erector spinae: aktywacja &gt;40% MVC</div>
+      <div class="li"><div class="cb" style="background:#f97316"></div>Łydka: stabilizacja izometryczna ~60% MVC</div>
+      <div class="li"><div class="cb" style="background:#eab308"></div>Quad: 75% MVC, obciążenie submaksymalne</div>
+      <div class="li"><div class="cb" style="background:#dc2626"></div>Strefa 150–270°: wzrost kosztu met., rekrutacja wł. IIx</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="ph grn">Panel 2 · UA System + F14 — MODEL SYMULACYJNY</div>
+    <canvas id="cUA" width="500" height="500"></canvas>
+    <div class="leg">
+      <div class="li"><div class="cb" style="background:#22c55e"></div>Erector spinae: redukcja momentu zginającego L4/L5 ~20% (estym.)</div>
+      <div class="li"><div class="cb" style="background:#4ade80"></div>Łydka: 12% MVC — strefa tlenowa &lt;LT</div>
+      <div class="li"><div class="cb" style="background:#3b82f6"></div>Elastomer: bufor energii sprężystej ~1.0 kg, histereza 20% (model)</div>
+      <div class="li"><div class="cb" style="background:#10b981"></div>Quad: 80% MVC — faza akumulacji en. sprężystej</div>
+    </div>
+  </div>
+  <div class="panel" style="grid-column:1/-1">
+    <div class="ph grn">Estymacja Kosztu Metabolicznego i Redystrybucja O₂ — MODEL (nie dane z czujnika)</div>
+    <canvas id="cSankey" class="wide" width="940" height="260"></canvas>
+    <div class="leg" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      <div class="li"><div class="cb" style="background:#ef4444"></div>SPD — estymacja kosztu metabolicznego [model: akt^1.5 × masa]</div>
+      <div class="li"><div class="cb" style="background:#22c55e"></div>UA — estymacja po redystrybucji [model]</div>
+      <div class="li"><div class="cb" style="background:#3b82f6"></div>Elastomer — energia sprężysta: F·ε·A [Mooney-Rivlin]</div>
+      <div class="li"><div class="cb" style="background:#f59e0b"></div>Histereza lateksu — strata termiczna [model, 0–35%]</div>
+    </div>
+  </div>
+  <div class="panel" style="grid-column:1/-1">
+    <div class="ph blue">Moment siły vs kąt korby — SYMULACJA (model kinematyczny, nie pomiar tensometryczny)</div>
+    <canvas id="cChart" class="chart" width="940" height="220"></canvas>
+    <div class="leg" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      <div class="li"><div class="cb" style="background:#ef4444"></div>SPD — moment netto [model]</div>
+      <div class="li"><div class="cb" style="background:#22c55e"></div>UA — moment mięśniowy [model]</div>
+      <div class="li"><div class="cb" style="background:#3b82f6"></div>UA — elastomer ×2 skala [model]</div>
+      <div class="li">UDC = górny martwy punkt (0°±30°) · linia pionowa = kąt aktualny</div>
+    </div>
+  </div>
+  <div class="panel" style="grid-column:1/-1">
+    <div class="ph grn">Schemat mechanizmu elastomeru UA — MODEL GEOMETRYCZNY</div>
+    <canvas id="cMech" class="wide" width="940" height="300"></canvas>
+    <div class="leg" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      <div class="li">F,M,R — trzy rolki na dolnej rurze ramy</div>
+      <div class="li">Cięgna od osi pedałów → najpierw rolka F (przy kierownicy)</div>
+      <div class="li">Kreskowanie = przesuw rurki · max rozciągnięcie przy pedałach poziomo (90°/270°)</div>
+    </div>
+  </div>
+  <div class="leg wide">
+    <div class="li"><div class="cb" style="background:#5b5bd6"></div>1 Prostownik biodra</div>
+    <div class="li"><div class="cb" style="background:#e0246a"></div>2 Prostownik kolana</div>
+    <div class="li"><div class="cb" style="background:#f28c28"></div>3 Zginacz podeszwowy</div>
+    <div class="li"><div class="cb" style="background:#22b8d8"></div>4 Zginacz grzbietowy</div>
+    <div class="li"><div class="cb" style="background:#f5e61a"></div>5 Zginacz kolana</div>
+    <div class="li"><div class="cb" style="background:#2db84a"></div>6 Zginacz biodra</div>
+    <div class="li" style="grid-column:1/-1">Jaskrawość = % MVC (model) · noga bliższa: pełna · dalsza: przyciemniona · przeciągnij = scrubbing kąta</div>
+  </div>
+  <div class="ctrl">
+    <div class="cg">
+      <button id="btnPP">Pauza</button>
+      <button id="btnR">Reset (0°)</button>
+      <button id="csvBtn">⬇ CSV</button>
+      <button id="btnPres">⛶ Prezentacja</button>
+    </div>
+    <div class="cg">
+      <label for="spd">Kadencja:</label>
+      <input id="spd" type="range" min="0.3" max="4" step="0.1" value="1.2">
+      <span id="rpmLbl" style="font-family:monospace;color:#a1a1aa;min-width:64px">~72 obr/min</span>
+    </div>
+    <div class="cg">
+      <label for="hyster" title="% energii lateksu tracony na ciepło przy powrocie rurki. Model siły: Mooney-Rivlin neo-Hookeański (C1=0.28, C2=0.08) — nieliniowy, jak prawdziwy lateks.">Histereza lateksu ⓘ:</label>
+      <input id="hyster" type="range" min="0" max="35" step="1" value="20">
+      <span id="hLbl" style="font-family:monospace;color:#a1a1aa;min-width:38px">20%</span>
+    </div>
+    <span id="ang" style="font-family:monospace;color:#f4f4f5">Kąt: 0° · 12:00</span>
+  </div>
+</div>
+<script>
+// ── Canvasy ────────────────────────────────────────────────────────────────
+const cSPD  = document.getElementById('cSPD').getContext('2d');
+const cUA   = document.getElementById('cUA').getContext('2d');
+const cMech = document.getElementById('cMech').getContext('2d');
+const cChart= document.getElementById('cChart').getContext('2d');
+const cSank = document.getElementById('cSankey').getContext('2d');
+const btnPP = document.getElementById('btnPP');
+const spdR  = document.getElementById('spd');
+const rpmLbl= document.getElementById('rpmLbl');
+const hSlid = document.getElementById('hyster');
+const hLbl  = document.getElementById('hLbl');
+const angEl = document.getElementById('ang');
+
+// ── Stałe geometryczne ─────────────────────────────────────────────────────
+const HIP0 = {x:220, y:185};   // biodro w spoczynku
+const BB   = {x:250, y:350};   // bottom bracket
+const CR   = 55;                // korba [px] = 172,5 mm rzecz.
+const FEM  = 115, TIB = 115;   // udo, goleń [px]
+const SHOULDER0 = {x:335, y:142};
+const HAND0     = {x:406, y:208};
+const ROLL = {F:{x:381,y:259}, M:{x:281,y:263}, R:{x:240,y:265}};
+const MM_PX = 172.5 / CR;
+// Mooney-Rivlin: C1,C2 dobrane by przy ε≈0.5 dawać ~1 kg
+const C1=0.28, C2=0.08;
+
+// ── Model lateksu — Mooney-Rivlin + histereza ──────────────────────────────
+let hLoss = 0.20;
+
+function latexForce(strain, isReturn) {
+  if (strain <= 0) return 0;
+  const lam = 1 + strain;
+  const sig = 2*(C1 + C2/lam) * (lam*lam - 1/lam) / lam * (Math.PI/4*(36-9));
+  return Math.max(0, sig * (isReturn ? 1-hLoss : 1) / 9.81);  // [kg]
+}
+
+function tubeState(a) {
+  const r  = a*Math.PI/180;
+  // zaczepy na osiach pedałów (nie w suporcie)
+  const px = BB.x + CR*Math.sin(r),  py = BB.y - CR*Math.cos(r);
+  const qx = BB.x - CR*Math.sin(r),  qy = BB.y + CR*Math.cos(r);
+  const d1 = Math.hypot(px-ROLL.F.x, py-ROLL.F.y);
+  const d2 = Math.hypot(qx-ROLL.F.x, qy-ROLL.F.y);
+  const tot = (d1+d2)*MM_PX + 432;   // 432 mm trasa po ramie
+  const strain = Math.max(0, tot/1000 - 1);
+  // POPRAWKA: max rozciągnięcie przy pedałach poziomo (90°/270°),
+  // faza powrotu = rurka skraca się = pedał bliższy idzie w górę (270°→90° przez 0°)
+  const isRet = a > 90 && a < 270;
+  return {d1, d2, strain, kg: latexForce(strain, isRet)};
+}
+
+// ── Bilans energetyczny i O₂ ──────────────────────────────────────────────
+// Estymacja kosztu metabolicznego mięśnia: VO2_rel ∝ (aktywacja^1.5) × masa
+// Masy [kg]: quad 2.0, hamstr 1.0, gastrocn 0.5, tibialis 0.3, erector 0.6, gluteus 0.7
+const MASS = [0.7, 2.0, 0.5, 0.3, 1.0, 0.7];    // [gluteus, quad, gastr, tib, hamstr, hipflex]
+function vo2cost(vals) {
+  // VO2 ∝ aktywacja^1.5 × masa (uwzględnia nieliniowość koszt vs intensywność)
+  return vals.reduce((sum,v,i)=>sum + Math.pow(Math.max(0,v),1.5)*MASS[i], 0);
+}
+// Próg mleczanowy: aktywacja > 0.55 → beztlenowo (koszt metaboliczny ×1.6)
+function metCost(vals) {
+  return vals.reduce((sum,v,i)=>{
+    const base = Math.pow(Math.max(0,v),1.5)*MASS[i];
+    return sum + (v>0.55 ? base*1.6 : base);
+  },0);
+}
+// Energia elastomeru [J·norm]: siła × przesuw (normowane do skali wykresu)
+function elastEnergy(a) {
+  const st=tubeState(a);
+  return st.kg * st.strain * 0.18;   // przybliżenie: F·x, 0.18 = skala
+}
+
+const SW=940, SH=260;   // Sankey canvas size
+function drawSankey(a) {
+  cSank.clearRect(0,0,SW,SH);
+  cSank.fillStyle='#0b0b0d'; cSank.fillRect(0,0,SW,SH);
+
+  const vS=mvals(a,SPD_B,SPD_P), vU=mvals(a,UA_B,UA_P);
+  const cS=metCost(vS), cU=metCost(vU);
+  const eEl=elastEnergy(a);
+  const eHist=eEl*hLoss;
+  const eReturn=eEl*(1-hLoss);
+  const saving=Math.max(0,(cS-cU)/cS);
+
+  // ── Kolumna 1: wejście energii (metaboliczne) ──────────────────────────
+  const col1x=60, col2x=320, col3x=580, col4x=820;
+  const BAR_W=38;
+
+  // Normalizacja: cS = 100% szerokości
+  const norm=v=>Math.max(2, v/cS*180);
+
+  // Tło legendy kolumn
+  const colLabel=(x,t,c)=>{
+    cSank.fillStyle=c; cSank.font='bold 12px sans-serif'; cSank.textAlign='center';
+    cSank.fillText(t,x+BAR_W/2,14);
+  };
+  colLabel(col1x,'WEJŚCIE | energetyczne','#a1a1aa');
+  colLabel(col2x,'MIĘŚNIE SPD','#ef4444');
+  colLabel(col3x,'MIĘŚNIE UA','#22c55e');
+  colLabel(col4x,'EFEKT netto','#f59e0b');
+
+  // Paski mięśni dla SPD
+  const names=['Pośladek','Quad','Łydka','Piszczel','Hamstring','Zg.biodra'];
+  const colors=['#5b5bd6','#e0246a','#f28c28','#22b8d8','#f5e61a','#2db84a'];
+  let yS=22, yU=22;
+  vS.forEach((v,i)=>{
+    const h=norm(Math.pow(Math.max(0,v),1.5)*MASS[i]);
+    const isAnae=v>0.55;
+    cSank.fillStyle=colors[i];
+    cSank.globalAlpha=isAnae?1:.7;
+    cSank.fillRect(col2x,yS,BAR_W,h-2);
+    if(isAnae){  // oznaczenie beztlenowe
+      cSank.fillStyle='rgba(239,68,68,.4)'; cSank.fillRect(col2x,yS,BAR_W,h-2);
+    }
+    cSank.globalAlpha=1;
+    cSank.fillStyle='#a1a1aa'; cSank.font='11px monospace'; cSank.textAlign='left';
+    cSank.fillText(names[i]+' '+(v*100|0)+'%', col2x+BAR_W+4, yS+Math.max(7,h/2));
+    yS+=h+2;
+  });
+
+  vU.forEach((v,i)=>{
+    const h=norm(Math.pow(Math.max(0,v),1.5)*MASS[i]);
+    cSank.fillStyle=colors[i]; cSank.globalAlpha=.85;
+    cSank.fillRect(col3x,yU,BAR_W,h-2);
+    cSank.globalAlpha=1;
+    yU+=h+2;
+  });
+
+  // Blok elastomeru UA
+  const hEl=norm(eEl*4);
+  cSank.fillStyle='#3b82f6'; cSank.globalAlpha=.8;
+  cSank.fillRect(col3x, yU+6, BAR_W, hEl);
+  cSank.globalAlpha=1;
+  cSank.fillStyle='#93c5fd'; cSank.font='11px monospace'; cSank.textAlign='left';
+  cSank.fillText('Elast. '+tubeState(a).kg.toFixed(2)+'kg', col3x+BAR_W+4, yU+10+hEl/2);
+
+  // Straty na histerezę
+  const hHist=norm(eHist*4);
+  cSank.fillStyle='#f59e0b'; cSank.globalAlpha=.7;
+  cSank.fillRect(col3x+BAR_W+55, yU+6, 14, hHist);
+  cSank.globalAlpha=1;
+  cSank.fillStyle='#fbbf24'; cSank.font='11px monospace'; cSank.textAlign='left';
+  cSank.fillText('Ciepło '+Math.round(hLoss*100)+'%', col3x+BAR_W+72, yU+10+hHist/2);
+
+  // Strzałki/łączniki SPD→UA
+  const hTotal_S=yS-22, hTotal_U=yU-22;
+  cSank.strokeStyle='rgba(239,68,68,.25)'; cSank.lineWidth=1.5;
+  cSank.beginPath(); cSank.moveTo(col2x+BAR_W,22); cSank.bezierCurveTo(
+    col2x+BAR_W+40,22, col3x-40,22, col3x,22); cSank.stroke();
+  cSank.beginPath(); cSank.moveTo(col2x+BAR_W,22+hTotal_S); cSank.bezierCurveTo(
+    col2x+BAR_W+40,22+hTotal_S, col3x-40,22+hTotal_U, col3x,22+hTotal_U); cSank.stroke();
+
+  // ── Panel wyników netto ───────────────────────────────────────────────
+  const nx=col4x, ny=22, nw=110;
+  // VO2 relative
+  const pct=v=>Math.round(v*100);
+  const rows=[
+    ['VO₂ SPD [model, j.u.]', (cS*100).toFixed(0)+' j.u.', '#fca5a5'],
+    ['VO₂ UA [model, j.u.]',  (cU*100).toFixed(0)+' j.u.', '#86efac'],
+    ['Redukcja VO₂ (estym.)',  pct(saving)+'%',              '#22c55e'],
+    ['Łydka: SPD→UA [model]',    '60%→12% MVC',                '#f28c28'],
+    ['Quad: SPD→UA [model]',     '75%→80% MVC',                '#e0246a'],
+    ['Powyżej LT SPD',  vS.filter(v=>v>0.55).length+'/6 mięśni','#ef4444'],
+    ['Powyżej LT UA',   vU.filter(v=>v>0.55).length+'/6 mięśni','#22c55e'],
+    ['Elastomer F [model]',   tubeState(a).kg.toFixed(2)+' kg',        '#3b82f6'],
+    ['Strata hist. [model]',Math.round(hLoss*100)+'%',               '#f59e0b'],
+  ];
+  cSank.font='12px monospace'; cSank.textAlign='left';
+  rows.forEach(([l,v,c],i)=>{
+    const y=ny+i*25;
+    cSank.fillStyle='#3f3f46'; cSank.fillRect(nx,y,nw+40,21);
+    cSank.fillStyle='#71717a'; cSank.fillText(l,nx+4,y+14);
+    cSank.fillStyle=c; cSank.font='bold 10px monospace';
+    cSank.fillText(v,nx+nw-18,y+14);
+    cSank.font='12px monospace';
+  });
+
+  // Tytuł
+  cSank.fillStyle='#a1a1aa'; cSank.font='11px sans-serif'; cSank.textAlign='center';
+  cSank.fillText('MODEL — nie dane empiryczne. VO₂ estym. wg: Bhambhani & Singh (1991), J Appl Physiol. akt^1.5 × masa. LT: >55% MVC (u amatorów; elita: 70-80% MVC). Wymaga weryf. EMG + analizator gazów.',SW/2,SH-6);
+}
+
+// ── Cache pracy na obrót (liczymy raz, nie co klatkę) ──────────────────────
+let cachedWork = null;
+function getWork() {
+  if (cachedWork) return cachedWork;
+  let wS=0, wU=0;
+  for(let i=0;i<360;i++){wS+=torque(i,false).total; wU+=torque(i,true).total;}
+  cachedWork = {spd:wS/360, ua:wU/360};
+  return cachedWork;
+}
+function invalidateWork() { cachedWork = null; }
+
+// ── Kołysanie miednicy (+/−5°) ─────────────────────────────────────────────
+// Zwraca przesunięte biodro ORAZ zmieniony punkt barku
+function bodyPose(a) {
+  const tilt = 5*Math.sin((a+10)*Math.PI/180) * Math.PI/180;
+  const dx = 6*Math.sin(tilt), dy = 6*(1-Math.cos(tilt));
+  const hp = {x: HIP0.x+dx, y: HIP0.y+dy};
+  // Bark przesuwa się razem z tułowiem (tułów obraca się wokół biodra)
+  const sh = {
+    x: SHOULDER0.x + dx*0.7,
+    y: SHOULDER0.y + dy*0.7
+  };
+  const hand = {x: sh.x + (HAND0.x-SHOULDER0.x), y: sh.y + (HAND0.y-SHOULDER0.y)};
+  return {hp, sh, hand};
+}
+
+// ── IK — kolano zawsze do tyłu (rower: kolano nigdy nie wysuwa się przed pedał)
+function solveIK(hp, tx, ty) {
+  const dx=tx-hp.x, dy=ty-hp.y;
+  let d=Math.hypot(dx,dy);
+  d=Math.max(Math.abs(FEM-TIB)+0.01, Math.min(FEM+TIB-0.01, d));
+  const al=(FEM*FEM-TIB*TIB+d*d)/(2*d);
+  const h =Math.sqrt(Math.max(0,FEM*FEM-al*al));
+  const L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L;
+  // Wektor normalny do prostej biodro→pedał: dwa możliwe: (uy,-ux) i (-uy,ux)
+  // "Do tyłu" = ujemny X (w lewo na ekranie = tył roweru)
+  // Wybieramy tę normalną której składnik X jest ujemny (skierowana w tył)
+  const nx1= uy, ny1=-ux;   // pierwsza normalna
+  const nx2=-uy, ny2= ux;   // druga normalna
+  // Tył roweru = mniejszy X. Wybierz normalną bardziej skierowaną w lewo (-X)
+  const [nx,ny] = nx1 > nx2 ? [nx1,ny1] : [nx2,ny2];
+  return {
+    knee:{x: hp.x+ux*al + h*nx, y: hp.y+uy*al + h*ny},
+    foot:{x:tx, y:ty}
+  };
+}
+
+function ik2(a,b,l1,l2) {
+  const dx=b.x-a.x, dy=b.y-a.y, dist=Math.hypot(dx,dy)||1;
+  const d=Math.min(dist,l1+l2-0.01), ux=dx/dist, uy=dy/dist;
+  const al=(l1*l1-l2*l2+d*d)/(2*d), h=Math.sqrt(Math.max(0,l1*l1-al*al));
+  return {x:a.x+ux*al-h*uy, y:a.y+uy*al+h*ux};
+}
+
+// ── Kąt kolana [stopnie] ───────────────────────────────────────────────────
+function kneeAngleDeg(hp,knee,foot){
+  const ux=hp.x-knee.x, uy=hp.y-knee.y, vx=foot.x-knee.x, vy=foot.y-knee.y;
+  const cos=Math.max(-1,Math.min(1,(ux*vx+uy*vy)/((Math.hypot(ux,uy)*Math.hypot(vx,vy))||1)));
+  return Math.round(Math.acos(cos)*180/Math.PI);
+}
+
+// ── Staw skokowy ───────────────────────────────────────────────────────────
+// plantarfleksja przy pchnięciu (90°→200°), dorsiflesja przy ciągnięciu
+// Stopa: kostka elastyczna — kąt stopy jest utrzymywany bliski poziomowi,
+// z plantarfleksją przy pchnięciu i dorsifleksją przy ciągnięciu.
+// Stopa NIE rotuje 1:1 z golenią — kostka kompensuje ruch goleni.
+function drawFoot(ctx, knee, ankle, legAngleDeg, col, alpha) {
+  // Kąt goleni względem pionu (0° = goleń pionowo w dół)
+  const dx=ankle.x-knee.x, dy=ankle.y-knee.y;
+  const shinAngle = Math.atan2(dx, dy);   // atan2(x,y) bo Y w dół = atan od pionu
+
+  // Kąt stopy: stopa trzyma się blisko poziomej, ale z offsetem skokowym.
+  // Plantarfleksja (piętą w górę) przy pchnięciu, dorsifleksja przy ciągnięciu.
+  // Kompensacja kątem goleni (ok. 30% ruchu goleni) + offset fazowy.
+  const plant = 18 * Math.sin((legAngleDeg - 80) * Math.PI/180); // [°]
+  // Finalny kąt stopy w układzie świata: blisko 0 (poziom) + offset
+  const footWorldAngle = shinAngle * 0.25 + plant * Math.PI/180;
+
+  // Wektor stopy w układzie świata (palce w prawo = +X kierunek jazdy)
+  const fToeX =  Math.cos(footWorldAngle);
+  const fToeY =  Math.sin(footWorldAngle);
+
+  const heelX = ankle.x - fToeX * 9;
+  const heelY = ankle.y - fToeY * 9;
+  const toeX  = ankle.x + fToeX * 21;
+  const toeY  = ankle.y + fToeY * 21;
+
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = col; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(heelX, heelY); ctx.lineTo(toeX, toeY); ctx.stroke();
+  dot(ctx, heelX, heelY, 5, '#a1a1aa');
+  dot(ctx, toeX,  toeY,  4, '#71717a');
+  ctx.globalAlpha = 1;
+}
+
+// ── Moment siły (normowany, z fazą ciągnięcia) ────────────────────────────
+function torque(a, isUA) {
+  const r = a*Math.PI/180;
+  // pchnięcie: 0°→180°, ciągnięcie: 180°→360° (wartość ujemna = ciągnie)
+  const push   = Math.sin(r);
+  const muscleTq = push * (isUA ? 0.82 : 1.0);   // UA lżej pcha, bo elastomer pomaga
+  const elastTq  = isUA ? tubeState(a).kg/6 : 0;  // wkład elastomeru
+  return {muscle: muscleTq, elast: elastTq, total: muscleTq+elastTq};
+}
+
+// ── Aktywacja mięśni ───────────────────────────────────────────────────────
+const MD  = [[0,110],[25,150],[150,200],[195,235],[220,310],[275,355]];
+const SPD_B=[.25,.35,.45,.2,.3,.25], SPD_P=[.8,.75,.6,.4,.5,.4];
+const UA_B =[.1,.2,.04,.04,.04,.06], UA_P =[.5,.8,.12,.1,.1,.15];
+function mwin(a,s,e){
+  const len=e-s, t=((a-s+180)%360+360)%360-180, edg=14;
+  if(t<-edg) return 0;
+  if(t<0)    return .5-.5*Math.cos(Math.PI*(t+edg)/edg);
+  if(t<=len) return 1;
+  if(t<len+edg) return .5-.5*Math.cos(Math.PI*(len+edg-t)/edg);
+  return 0;
+}
+function mvals(a,B,P){return MD.map((m,i)=>B[i]+(P[i]-B[i])*mwin(a,m[0],m[1]));}
+
+// ── CSV ───────────────────────────────────────────────────────────────────
+function exportCSV(){
+  const hdr='kat[deg],SPD_moment[Nm_norm],UA_moment_miesniowy[Nm_norm],'
+    +'UA_elastomer[Nm_norm],UA_total[Nm_norm],'
+    +'SPD_quad[%MVC],SPD_calf[%MVC],UA_quad[%MVC],UA_calf[%MVC],'
+    +'elastomer[kg],kolano_SPD[deg],kolano_UA[deg]';
+  const rows=[hdr];
+  for(let a=0;a<360;a+=2){
+    const r2=(a-90)*Math.PI/180;
+    const px=BB.x+CR*Math.cos(r2), py=BB.y+CR*Math.sin(r2);
+    const poseC=bodyPose(a);
+    const {hp}=poseC;
+    const hpF={x:HIP0.x-(hp.x-HIP0.x), y:bodyPose(a+180).hp.y};
+    const jS =solveIK(hp, px, py);
+    const jU =solveIK(hp, px, py);
+    const jSF=solveIK(hpF,2*BB.x-px,2*BB.y-py);
+    const ts=torque(a,false), tu=torque(a,true), st=tubeState(a);
+    const vs=mvals(a,SPD_B,SPD_P), vu=mvals(a,UA_B,UA_P);
+    const kaS=kneeAngleDeg(hp,jS.knee,jS.foot);
+    const kaU=kneeAngleDeg(hp,jU.knee,jU.foot);
+    rows.push([a,ts.total.toFixed(3),tu.muscle.toFixed(3),
+      tu.elast.toFixed(3),tu.total.toFixed(3),
+      (vs[1]*100).toFixed(1),(vs[2]*100).toFixed(1),
+      (vu[1]*100).toFixed(1),(vu[2]*100).toFixed(1),
+      st.kg.toFixed(3),kaS,kaU].join(','));
+  }
+  const blob=new Blob([rows.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='UA_vs_SPD_dane.csv'; a.click();
+}
+document.getElementById('csvBtn').addEventListener('click',exportCSV);
+
+// ── Narzędzia rysowania ───────────────────────────────────────────────────
+const GC=['#5b5bd6','#e0246a','#f28c28','#22b8d8','#f5e61a','#2db84a'];
+function loadColor(v){
+  v=Math.max(0,Math.min(1,v)); let r,g,b;
+  if(v<.5){const p=v*2;r=34+(234-34)*p|0;g=197+(179-197)*p|0;b=94+(8-94)*p|0;}
+  else{const p=(v-.5)*2;r=234+(239-234)*p|0;g=179+(68-179)*p|0;b=8+(68-8)*p|0;}
+  return `rgb(${r},${g},${b})`;
+}
+function tubeCol(k){
+  k=Math.max(0,Math.min(1,k));
+  return `rgb(${231-172*k|0},${217-87*k|0},${184+62*k|0})`;
+}
+function seg(ctx,x1,y1,x2,y2,w,col,al=1){
+  ctx.globalAlpha=al;ctx.strokeStyle=col;ctx.lineWidth=w;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.globalAlpha=1;
+}
+function dot(ctx,x,y,r,col){ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();}
+function ring(ctx,x,y,r,w,col){ctx.strokeStyle=col;ctx.lineWidth=w;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke();}
+
+// ── Tarcza kąta (zegar) ───────────────────────────────────────────────────
+function drawDial(ctx,a,isUA){
+  const cx=452,cy=452,R=40;
+  ring(ctx,cx,cy,R,1.5,'#27272a');
+  for(let i=0;i<12;i++){
+    const ar=i*Math.PI/6-Math.PI/2, r1=i%3===0?R-10:R-6;
+    ctx.strokeStyle=i%3===0?'#71717a':'#3f3f46'; ctx.lineWidth=i%3===0?1.5:1;
+    ctx.beginPath(); ctx.moveTo(cx+r1*Math.cos(ar),cy+r1*Math.sin(ar));
+    ctx.lineTo(cx+R*Math.cos(ar),cy+R*Math.sin(ar)); ctx.stroke();
+  }
+  ctx.save(); ctx.beginPath(); ctx.moveTo(cx,cy);
+  ctx.arc(cx,cy,R-3,-Math.PI/2-30*Math.PI/180,-Math.PI/2+30*Math.PI/180);
+  ctx.closePath();
+  ctx.fillStyle=isUA?'rgba(59,130,246,.25)':'rgba(239,68,68,.3)'; ctx.fill(); ctx.restore();
+  const ar=(a-90)*Math.PI/180;
+  ctx.strokeStyle=isUA?'#22c55e':'#ef4444'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+(R-4)*Math.cos(ar),cy+(R-4)*Math.sin(ar)); ctx.stroke();
+  dot(ctx,cx,cy,3,'#a1a1aa');
+  ctx.font='13px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#52525b';
+  [[0,'12'],[90,'3'],[180,'6'],[270,'9']].forEach(([d,l])=>{
+    const a2=(d-90)*Math.PI/180;
+    ctx.fillText(l,cx+(R+8)*Math.cos(a2),cy+(R+8)*Math.sin(a2)+3);
+  });
+}
+
+// ── Rama roweru ───────────────────────────────────────────────────────────
+function drawFrame(ctx,isUA){
+  const R=74, ay=BB.y-17;
+  const rear={x:152,y:ay}, front={x:418,y:ay};
+  const clu={x:212,y:225}, crown={x:393,y:252}, head={x:384,y:222}, bar={x:394,y:208};
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  seg(ctx,40,ay+R,480,ay+R,2,'#27272a');
+  [rear,front].forEach(w=>{
+    ring(ctx,w.x,w.y,R,4,'#3f3f46'); ring(ctx,w.x,w.y,R-6,1,'#1f1f24'); dot(ctx,w.x,w.y,4,'#71717a');
+  });
+  ctx.strokeStyle=isUA?'#f59e0b':'#52525b'; ctx.lineWidth=6;
+  ctx.beginPath();
+  ctx.moveTo(rear.x,rear.y); ctx.lineTo(BB.x,BB.y);
+  ctx.moveTo(rear.x,rear.y); ctx.lineTo(clu.x,clu.y);
+  ctx.moveTo(BB.x,BB.y);     ctx.lineTo(clu.x,clu.y);
+  ctx.moveTo(crown.x,crown.y); ctx.lineTo(front.x,front.y);
+  ctx.moveTo(crown.x,crown.y); ctx.lineTo(head.x,head.y);
+  if(!isUA){ctx.moveTo(crown.x,crown.y);ctx.lineTo(BB.x,BB.y);ctx.moveTo(clu.x,clu.y);ctx.lineTo(head.x,head.y);}
+  ctx.stroke();
+  if(isUA){seg(ctx,223,262,crown.x,crown.y,13,'#f59e0b');seg(ctx,240,262,crown.x-20,crown.y+1,3,'#3f3f46');}
+  seg(ctx,clu.x,clu.y,HIP0.x-18,HIP0.y+8,4,'#a1a1aa');
+  seg(ctx,HIP0.x-34,HIP0.y+8,HIP0.x-4,HIP0.y+8,8,'#a1a1aa');
+  ctx.strokeStyle='#a1a1aa'; ctx.lineWidth=5;
+  ctx.beginPath(); ctx.moveTo(head.x,head.y); ctx.lineTo(bar.x,bar.y);
+  ctx.lineTo(bar.x+20,bar.y);
+  ctx.quadraticCurveTo(bar.x+34,bar.y,bar.x+32,bar.y+16);
+  ctx.quadraticCurveTo(bar.x+30,bar.y+30,bar.x+14,bar.y+30); ctx.stroke();
+  ring(ctx,BB.x,BB.y,75,3,'#27272a');
+}
+
+// ── Tułów i ramię (reaguje na kołysanie biodra) ───────────────────────────
+function drawTorso(ctx,isUA,spineCol,pose){
+  const {hp,sh,hand}=pose;
+  ctx.strokeStyle=spineCol; ctx.lineWidth=14; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(hp.x,hp.y);
+  ctx.quadraticCurveTo(hp.x+30,hp.y-60,sh.x,sh.y); ctx.stroke();
+  const el=ik2(sh,hand,55,55);
+  seg(ctx,sh.x,sh.y,el.x,el.y,9,'#a1a1aa');
+  seg(ctx,el.x,el.y,hand.x,hand.y,9,'#a1a1aa');
+  dot(ctx,hand.x,hand.y,5,'#e4e4e7');
+  dot(ctx,sh.x+10,sh.y-12,16,isUA?'#22c55e':'#ef4444');
+}
+
+// ── Noga z mięśniami + ruchomy staw skokowy ───────────────────────────────
+function drawLeg(ctx,j,v,alpha,legAngleDeg,hp){
+  const al=i=>alpha*(0.3+0.7*Math.min(1,v[i]/.8));
+  const lerp=(p,q,t)=>({x:p.x+(q.x-p.x)*t, y:p.y+(q.y-p.y)*t});
+  const K=j.knee, F=j.foot;
+  ctx.globalAlpha=alpha*.9; ctx.strokeStyle='#2a2a30'; ctx.lineCap='round';
+  ctx.lineWidth=28; ctx.beginPath(); ctx.moveTo(hp.x,hp.y); ctx.lineTo(K.x,K.y); ctx.stroke();
+  ctx.lineWidth=20; ctx.beginPath(); ctx.moveTo(K.x,K.y); ctx.lineTo(F.x,F.y); ctx.stroke();
+  ctx.globalAlpha=1;
+  const h0=lerp(hp,K,.1), h1=lerp(hp,K,.95);
+  const segL=(p,q,o,w,ci,ai)=>{
+    const dx=q.x-p.x,dy=q.y-p.y,L=Math.hypot(dx,dy)||1,nx=dy/L,ny=-dx/L;
+    ctx.globalAlpha=ai;ctx.strokeStyle=GC[ci];ctx.lineWidth=w;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(p.x+nx*o,p.y+ny*o);ctx.lineTo(q.x+nx*o,q.y+ny*o);ctx.stroke();
+    ctx.globalAlpha=1;
+  };
+  segL(h0,h1,-7,12,4,al(4));
+  segL(h0,h1, 7,14,1,al(1));
+  segL(hp,lerp(hp,K,.4),11,7,5,al(5));
+  ctx.globalAlpha=al(0); ctx.fillStyle=GC[0];
+  ctx.beginPath(); ctx.arc(hp.x-10,hp.y+2,15,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+  segL(lerp(K,F,.12),lerp(K,F,.85),-5,11,2,al(2));
+  segL(lerp(K,F,.20),lerp(K,F,.9), 6, 5,3,al(3));
+  // szkielet (biodro → kolano → kostka)
+  ctx.globalAlpha=alpha; ctx.strokeStyle='#f4f4f5'; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(hp.x,hp.y); ctx.lineTo(K.x,K.y); ctx.lineTo(F.x,F.y); ctx.stroke();
+  [hp,K].forEach(pt=>dot(ctx,pt.x,pt.y,5,'#fff'));
+  dot(ctx,F.x,F.y,5,'#e4e4e7');   // kostka
+  // stopa prostopadła do goleni
+  drawFoot(ctx,K,F,legAngleDeg,'#d4d4d8',alpha);
+  ctx.globalAlpha=1;
+}
+
+// ── Elastomer ─────────────────────────────────────────────────────────────
+function drawStrands(ctx,k,phase){
+  const {F,M,R}=ROLL, lw=3.2-k;
+  const segs=[
+    [F.x,F.y,M.x,M.y],[M.x,M.y,R.x,R.y],[R.x,R.y,R.x,R.y-13],
+    [R.x,R.y-13,F.x,F.y-15],[R.x+1,R.y-11,F.x+1,F.y-13],
+    [R.x,R.y-13,F.x,F.y],[F.x,F.y-15,F.x,F.y]
+  ];
+  const all=()=>segs.forEach(s=>{ctx.beginPath();ctx.moveTo(s[0],s[1]);ctx.lineTo(s[2],s[3]);ctx.stroke();});
+  ctx.lineCap='round'; ctx.strokeStyle=tubeCol(k); ctx.lineWidth=lw; all();
+  if(phase!==null){
+    ctx.setLineDash([2.2,3.8]); ctx.lineDashOffset=phase;
+    ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=lw*.35; all();
+    ctx.setLineDash([]);
+  }
+  [F,M,R].forEach(r=>{dot(ctx,r.x,r.y,5,'#18181b');ring(ctx,r.x,r.y,5,1.2,'#a1a1aa');dot(ctx,r.x,r.y,2,'#71717a');});
+}
+
+function drawElastomer(ctx,px,py){
+  const k=Math.min(1,tubeState(angle).kg/1.5);
+  drawStrands(ctx,k,null);
+  [[px,py],[2*BB.x-px,2*BB.y-py]].forEach(([fx,fy])=>{
+    seg(ctx,ROLL.F.x,ROLL.F.y,fx,fy,1.5,'#d4d4d8');
+    seg(ctx,ROLL.F.x,ROLL.F.y,ROLL.F.x+(fx-ROLL.F.x)*.22,ROLL.F.y+(fy-ROLL.F.y)*.22,5,tubeCol(k));
+    dot(ctx,fx,fy,7,'#09090b'); ring(ctx,fx,fy,7,1.5,'#71717a');
+  });
+}
+
+// ── Paski aktywacji ────────────────────────────────────────────────────────
+function drawBars(ctx,vals,valsFar,extra){
+  ctx.font='13px monospace'; ctx.textAlign='left';
+  vals.forEach((v,i)=>{
+    const y=108+i*15;
+    ctx.fillStyle=GC[i]; ctx.fillRect(10,y-8,7,8);
+    ctx.fillStyle='#a1a1aa';
+    ctx.fillText(['Glut.max','Quad','Gastr.','Tib.ant.','Hamstr.','HipFlex'][i],21,y);
+    ctx.fillStyle='#27272a'; ctx.fillRect(140,y-8,50,8); ctx.fillRect(140,y+1,50,3);
+    ctx.fillStyle=GC[i]; ctx.fillRect(140,y-8,50*Math.min(1,v),8);
+    ctx.globalAlpha=.55; ctx.fillRect(140,y+1,50*Math.min(1,valsFar[i]),3); ctx.globalAlpha=1;
+  });
+  extra.forEach((e,j)=>{ctx.fillStyle=e[2];ctx.fillText(e[0]+': '+e[1],10,108+(vals.length+j)*15+4);});
+}
+
+// ── Wykres momentu siły ────────────────────────────────────────────────────
+const CW_CH=940, CH_H=220, PAD={l:44,r:16,t:18,b:32};
+const CW=CW_CH-PAD.l-PAD.r, CH=CH_H-PAD.t-PAD.b;
+
+function drawChart(curA){
+  cChart.clearRect(0,0,CW_CH,CH_H);
+  cChart.fillStyle='#0b0b0d'; cChart.fillRect(0,0,CW_CH,CH_H);
+  // siatka
+  cChart.strokeStyle='#1f1f24'; cChart.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=PAD.t+CH*(1-i/4);
+    cChart.beginPath(); cChart.moveTo(PAD.l,y); cChart.lineTo(PAD.l+CW,y); cChart.stroke();
+    cChart.fillStyle='#52525b'; cChart.font='11px monospace'; cChart.textAlign='right';
+    cChart.fillText((i*25-50)+'%',PAD.l-4,y+3);   // oś: -50%..+50% (moment ujemny widoczny)
+  }
+  // zero-line
+  const yZero=PAD.t+CH*0.5;
+  cChart.strokeStyle='#3f3f46'; cChart.lineWidth=1;
+  cChart.beginPath(); cChart.moveTo(PAD.l,yZero); cChart.lineTo(PAD.l+CW,yZero); cChart.stroke();
+  [0,90,180,270,360].forEach(d=>{
+    const x=PAD.l+CW*d/360;
+    cChart.strokeStyle='#1f1f24'; cChart.lineWidth=1;
+    cChart.beginPath(); cChart.moveTo(x,PAD.t); cChart.lineTo(x,PAD.t+CH); cChart.stroke();
+    cChart.fillStyle='#52525b'; cChart.font='11px monospace'; cChart.textAlign='center';
+    cChart.fillText(d+'°',x,PAD.t+CH+12);
+    const labels=['12:00','3:00','6:00','9:00','12:00'];
+    cChart.fillStyle='#3f3f46'; cChart.font='12px sans-serif';
+    cChart.fillText(labels[d/90]||'',x,PAD.t+CH+24);
+  });
+  // Strefa UDC
+  cChart.fillStyle='rgba(239,68,68,.08)';
+  cChart.fillRect(PAD.l+CW*330/360,PAD.t,CW*(1-330/360),CH);
+  cChart.fillRect(PAD.l,           PAD.t,CW*30/360,      CH);
+  cChart.strokeStyle='rgba(239,68,68,.3)'; cChart.lineWidth=1;
+  [PAD.l+CW*330/360, PAD.l+CW*30/360].forEach(x=>{
+    cChart.beginPath();cChart.moveTo(x,PAD.t);cChart.lineTo(x,PAD.t+CH);cChart.stroke();});
+  cChart.fillStyle='rgba(239,68,68,.7)'; cChart.font='bold 11px sans-serif'; cChart.textAlign='center';
+  cChart.fillText('UDC',PAD.l+CW*15/360,PAD.t+10);
+  cChart.fillText('UDC',PAD.l+CW*345/360,PAD.t+10);
+  // Krzywe (moment mapowany: 0.5 = zero, -1..+1 -> CH)
+  const toY=v=>PAD.t+CH*(0.5-v*0.5);
+  const draw=(getV,col,lw,dash=[])=>{
+    cChart.strokeStyle=col; cChart.lineWidth=lw; cChart.setLineDash(dash);
+    cChart.beginPath();
+    for(let i=0;i<=360;i++){
+      const x=PAD.l+CW*i/360, y=toY(Math.max(-1,Math.min(1,getV(i))));
+      i===0?cChart.moveTo(x,y):cChart.lineTo(x,y);
+    }
+    cChart.stroke(); cChart.setLineDash([]);
+  };
+  // Przedział niepewności ±20% (model kinematyczny bez kalibracji EMG)
+  cChart.fillStyle='rgba(239,68,68,.10)';
+  for(let i=0;i<=359;i++){
+    const x=PAD.l+CW*i/360, v=Math.max(-1,Math.min(1,torque(i,false).total));
+    const y1=toY(v*1.2), y2=toY(v*0.8);
+    cChart.fillRect(x,Math.min(y1,y2),CW/360+1,Math.abs(y2-y1));
+  }
+  cChart.fillStyle='rgba(34,197,94,.08)';
+  for(let i=0;i<=359;i++){
+    const x=PAD.l+CW*i/360, v=Math.max(-1,Math.min(1,torque(i,true).total));
+    const y1=toY(v*1.2), y2=toY(v*0.8);
+    cChart.fillRect(x,Math.min(y1,y2),CW/360+1,Math.abs(y2-y1));
+  }
+  draw(a=>torque(a,false).total,'#ef4444',2);
+  draw(a=>torque(a,true).muscle,'#22c55e',2);
+  draw(a=>torque(a,true).elast*2,'#3b82f6',1.5,[4,3]);   // ×2 dla widoczności
+  // Linia aktualna
+  const xCur=PAD.l+CW*curA/360;
+  cChart.strokeStyle='rgba(255,255,255,.7)'; cChart.lineWidth=1.5;
+  cChart.beginPath(); cChart.moveTo(xCur,PAD.t); cChart.lineTo(xCur,PAD.t+CH); cChart.stroke();
+  dot(cChart,xCur,toY(Math.max(-1,Math.min(1,torque(curA,false).total))),4,'#ef4444');
+  dot(cChart,xCur,toY(Math.max(-1,Math.min(1,torque(curA,true).total))),4,'#22c55e');
+  // Praca (z cache)
+  const w=getWork();
+  const gain=((w.ua-w.spd)/Math.abs(w.spd)*100).toFixed(1);
+  cChart.fillStyle='#e4e4e7'; cChart.font='bold 12px monospace'; cChart.textAlign='right';
+  cChart.fillText('Estym. praca/obr SPD '+(w.spd*100).toFixed(1)+'% | UA '+(w.ua*100).toFixed(1)+'% | Δ '+gain+'%',
+    CW_CH-PAD.r, PAD.t+CH-5);
+  // legenda
+  cChart.font='12px sans-serif'; cChart.textAlign='left';
+  [['— SPD [model ±20%]','#ef4444'],['— UA mięśniowy [model ±20%]','#22c55e'],['-- UA elastomer ×2 [model]','#3b82f6']]
+    .forEach(([l,c],i)=>{cChart.fillStyle=c; cChart.fillText(l,PAD.l+4+i*185,PAD.t+12);});
+  // oś Y
+  cChart.save(); cChart.translate(11,PAD.t+CH/2); cChart.rotate(-Math.PI/2);
+  cChart.font='11px sans-serif'; cChart.textAlign='center'; cChart.fillStyle='#52525b';
+  cChart.fillText('Moment [% max, ±]',0,0); cChart.restore();
+}
+
+// ── Panel mechanizmu ───────────────────────────────────────────────────────
+function drawMech(ctx,px,py){
+  const Z=5.0, x0=210, y0=230;
+  ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,940,300);
+  const st=tubeState(angle), k=Math.min(1,st.kg/1.5), slide=(st.d1-st.d2)/2;
+  ctx.save(); ctx.setTransform(Z,0,0,Z,-x0*Z,-y0*Z); ctx.lineCap='round';
+  seg(ctx,223,262,393,252,13,'#f59e0b');
+  seg(ctx,240,262,373,253,3,'#3f3f46');
+  [[px,py],[2*BB.x-px,2*BB.y-py]].forEach(([fx,fy])=>{
+    seg(ctx,ROLL.F.x,ROLL.F.y,fx,fy,0.7,'#d4d4d8');
+    seg(ctx,ROLL.F.x,ROLL.F.y,ROLL.F.x+(fx-ROLL.F.x)*.2,ROLL.F.y+(fy-ROLL.F.y)*.2,2.4,tubeCol(k));
+  });
+  drawStrands(ctx,k,slide);
+  ctx.restore();
+  const sx=x=>(x-x0)*Z, sy=y=>(y-y0)*Z;
+  ctx.font='bold 18px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#fff';
+  [['F',ROLL.F],['M',ROLL.M],['R',ROLL.R]].forEach(([n,r])=>ctx.fillText(n,sx(r.x),sy(r.y)+5));
+  ctx.font='13px sans-serif'; ctx.fillStyle='#a1a1aa';
+  ctx.fillText('rolka F (przy kierownicy)',sx(ROLL.F.x)-20,sy(ROLL.F.y)+46);
+  ctx.fillText('dolna rura ramy',sx(ROLL.M.x),sy(ROLL.M.y)+46);
+  ctx.textAlign='left'; ctx.font='14px monospace'; ctx.fillStyle='#e4e4e7';
+  ctx.fillText('Cięgno bliższe: '+Math.round(st.d1*MM_PX)+' mm',14,22);
+  ctx.fillText('Cięgno dalsze:  '+Math.round(st.d2*MM_PX)+' mm',14,38);
+  ctx.fillText('Histereza: '+Math.round(hLoss*100)+'% · Model: Mooney-Rivlin',14,54);
+  ctx.fillStyle='#93c5fd';
+  ctx.fillText('Przesuw: '+(slide>=0?'→ ':'← ')+Math.abs(Math.round(slide*MM_PX))+' mm',490,22);
+  ctx.fillText('Naciąg: '+Math.round(st.strain*100)+'%  Siła: '+st.kg.toFixed(2)+' kg ±20%',490,38);
+  // MAX rozciągnięcie przy 90°
+  const stMax=tubeState(90);
+  ctx.fillStyle='#fbbf24';
+  ctx.fillText('Max (90°): '+Math.round(stMax.strain*100)+'%  '+stMax.kg.toFixed(2)+' kg',490,54);
+}
+
+// ── Scrubbing ──────────────────────────────────────────────────────────────
+function setupScrub(canvas){
+  let drag=false;
+  const onM=e=>{
+    if(!drag) return;
+    const r=canvas.getBoundingClientRect(), cx=(e.touches?e.touches[0]:e).clientX;
+    angle=((cx-r.left)/r.width*360+360)%360;
+  };
+  canvas.addEventListener('mousedown', e=>{playing=false;btnPP.textContent='Start';drag=true;onM(e);});
+  canvas.addEventListener('mousemove', onM);
+  canvas.addEventListener('mouseup',   ()=>drag=false);
+  canvas.addEventListener('mouseleave',()=>drag=false);
+  canvas.addEventListener('touchstart',e=>{playing=false;btnPP.textContent='Start';drag=true;onM(e);},{passive:true});
+  canvas.addEventListener('touchmove', onM,{passive:true});
+  canvas.addEventListener('touchend',  ()=>drag=false);
+}
+setupScrub(document.getElementById('cSPD'));
+setupScrub(document.getElementById('cUA'));
+
+// ── Główna pętla ───────────────────────────────────────────────────────────
+let angle=0, playing=true, speed=1.2, lastT=0;
+
+function frame(t){
+  const dt=Math.min((t-lastT)/1000,.05); lastT=t;
+  if(playing){ angle=(angle+speed*150*dt)%360; }
+
+  const rad=(angle-90)*Math.PI/180;
+  const px=BB.x+CR*Math.cos(rad), py=BB.y+CR*Math.sin(rad);
+  const pose=bodyPose(angle);
+  const {hp}=pose;
+  // POPRAWKA: noga bliższa kolano na prawo (+1), dalsza (po drugiej stronie) na lewo (-1)
+  // Dalsza noga: biodro symetryczne względem X środka ciała
+  // kołysanie miednicy jest w przeciwnej fazie dla drugiej nogi
+  const poseF=bodyPose(angle+180);
+  const hpFar={x: HIP0.x-(hp.x-HIP0.x), y: poseF.hp.y};
+  const jN =solveIK(hp,    px,          py,           1);
+  const jF =solveIK(hpFar, 2*BB.x-px, 2*BB.y-py);
+  const vSn=mvals(angle,    SPD_B,SPD_P), vSf=mvals(angle+180,SPD_B,SPD_P);
+  const vUn=mvals(angle,    UA_B, UA_P),  vUf=mvals(angle+180,UA_B, UA_P);
+  const spdSpine=Math.min(1,.2+.8*Math.exp(-angle*angle/800)+.5*Math.exp(-((angle-360)*(angle-360))/800));
+  const st=tubeState(angle);
+  const kaN=kneeAngleDeg(hp,jN.knee,jN.foot);
+
+  // ── SPD
+  cSPD.clearRect(0,0,500,500);
+  drawFrame(cSPD,false);
+  seg(cSPD,BB.x,BB.y,px,py,8,'#e4e4e7'); dot(cSPD,BB.x,BB.y,10,'#a1a1aa');
+  cSPD.globalAlpha=.6; cSPD.strokeStyle='#52525b'; cSPD.lineWidth=8; cSPD.lineCap='round';
+  cSPD.beginPath(); cSPD.moveTo(BB.x,BB.y); cSPD.lineTo(2*BB.x-px,2*BB.y-py); cSPD.stroke();
+  cSPD.globalAlpha=1;
+  drawTorso(cSPD,false,loadColor(spdSpine),pose);
+  drawLeg(cSPD,jF,vSf,.55,angle+180,hpFar);
+  drawLeg(cSPD,jN,vSn,1,angle,hp);
+  cSPD.lineWidth=8; cSPD.strokeStyle=(angle>300||angle<60)?'#ef4444':'#27272a';
+  cSPD.beginPath(); cSPD.arc(60,60,25,0,Math.PI*2); cSPD.stroke();
+  cSPD.fillStyle='#fff'; cSPD.font='13px sans-serif'; cSPD.textAlign='center';
+  cSPD.fillText('UDC',60,64);
+  const pc=v=>Math.round(v*100)+'%';
+  drawBars(cSPD,vSn,vSf,[['Plecy',pc(spdSpine),loadColor(spdSpine)],
+    ['Strefa',(angle>=150&&angle<=270)?'TAK':'nie',(angle>=150&&angle<=270)?'#ef4444':'#71717a']]);
+  if(angle>300||angle<60){cSPD.fillStyle='#ef4444';cSPD.textAlign='left';cSPD.font='bold 15px sans-serif';cSPD.fillText('Strefa 150-270°: wzrost koszt. met.',190,30);}
+  cSPD.fillStyle='#fbbf24'; cSPD.font='bold 16px monospace'; cSPD.textAlign='left';
+  cSPD.fillText('∠ kolano: '+kaN+'°',200,50);
+  drawDial(cSPD,angle,false);
+
+  // ── UA
+  cUA.clearRect(0,0,500,500);
+  drawFrame(cUA,true);
+  seg(cUA,BB.x,BB.y,px,py,8,'#e4e4e7'); dot(cUA,BB.x,BB.y,10,'#a1a1aa');
+  drawElastomer(cUA,px,py);
+  drawTorso(cUA,true,loadColor(.08),pose);
+  drawLeg(cUA,jF,vUf,.55,angle+180,hpFar);
+  drawLeg(cUA,jN,vUn,1,angle,hp);
+  cUA.font='bold 15px sans-serif'; cUA.textAlign='left';
+  cUA.fillStyle=(angle>90&&angle<210)?'#3b82f6':'#22c55e';
+  cUA.fillText((angle>90&&angle<210)?'Faza akumulacji en. sprężystej':'Faza zwrotu en. sprężystej (~1.0 kg)',25,30);
+  cUA.fillStyle='#4ade80'; cUA.font='bold 16px monospace';
+  cUA.fillText('∠ kolano: '+kaN+'°',200,50);
+  drawBars(cUA,vUn,vUf,[['Asysta',st.kg.toFixed(2)+' kg','#3b82f6'],
+    ['Naciąg',Math.round(st.strain*100)+'%','#a1a1aa'],
+    ['Hister.',Math.round(hLoss*100)+'%','#71717a']]);
+  drawDial(cUA,angle,true);
+
+  drawMech(cMech,px,py);
+  drawSankey(angle);
+  drawChart(angle);
+
+  const h=Math.round(angle/30+12)%12||12, m=Math.round((angle%30)*2);
+  angEl.textContent=`Kąt: ${Math.round(angle)}° · ${h}:${String(m).padStart(2,'0')}`;
+  // pętlę kontynuuje frameWithPres
+}
+
+btnPP.addEventListener('click',()=>{ playing=!playing; btnPP.textContent=playing?'Pauza':'Start'; });
+document.getElementById('btnR').addEventListener('click',()=>{ angle=0; });
+spdR.addEventListener('input',e=>{ speed=parseFloat(e.target.value); rpmLbl.textContent='~'+Math.round(speed*60)+' obr/min'; });
+hSlid.addEventListener('input',e=>{ hLoss=parseFloat(e.target.value)/100; hLbl.textContent=e.target.value+'%'; invalidateWork(); });
+// ── Tryb prezentacyjny ────────────────────────────────────────────────────
+let presMode=false, presPanel=0;
+const PRES_TITLES=[
+  'Panel 1: Geometria Szosowa + SPD — MODEL SYMULACYJNY',
+  'Panel 2: UA System + F14 — MODEL SYMULACYJNY',
+  'Estymacja Kosztu Metabolicznego i Redystrybucja O₂ — MODEL',
+  'Schemat mechanizmu elastomeru UA — MODEL GEOMETRYCZNY',
+  'Moment siły vs kąt korby — SYMULACJA',
+];
+const PRES_SRC=['cSPD','cUA','cSankey','cMech','cChart'];
+
+function presShow(i){
+  presPanel=i;
+  document.getElementById('presTitle').textContent=PRES_TITLES[i];
+  const src=document.getElementById(PRES_SRC[i]);
+  const dst=document.getElementById('cPres');
+  // Dopasuj proporcje
+  dst.width=src.width; dst.height=src.height;
+  const dctx=dst.getContext('2d');
+  dctx.clearRect(0,0,dst.width,dst.height);
+  dctx.drawImage(src,0,0);
+}
+function closePres(){
+  presMode=false;
+  document.getElementById('presOverlay').classList.remove('active');
+}
+document.getElementById('btnPres').addEventListener('click',()=>{
+  presMode=true;
+  document.getElementById('presOverlay').classList.add('active');
+  presShow(presPanel);
+});
+// Start pętli animacji — frameWithPres obsługuje też overlay prezentacyjny
+function frameWithPres(t){
+  frame(t);
+  if(presMode) presShow(presPanel);
+  requestAnimationFrame(frameWithPres);
+}
+requestAnimationFrame(t=>{ lastT=t; requestAnimationFrame(frameWithPres); });
+</script>
+</div><!-- /grid -->
+</body>
+</html>
